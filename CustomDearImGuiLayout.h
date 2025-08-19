@@ -3,7 +3,7 @@
 #include "imgui_internal.h"
 #include <cstdint>
 #include <cassert>
-
+#include <vector>
 
 typedef void (*CustomWindowFunc)();
 
@@ -14,274 +14,256 @@ namespace FrameGUILayout
     class CustomLayoutNode
     {
     public:
-        CustomLayoutNode(
-            bool isLogicalDomain,
-            uint32_t level,
-            ImVec2 domainPos,
-            ImVec2 domainSize,
-            float splitterRatio,
-            CustomWindowFunc customFunc = nullptr)
-            : m_pLeft(nullptr),
-              m_pRight(nullptr),
-              m_level(level),
-              m_domainPos(domainPos),
-              m_domainSize(domainSize),
-              m_splitterRatio(splitterRatio),
-              m_splitterWidth(2.f),
-              m_pfnCustomWindowFunc(customFunc),
-              m_isLogicalDomain(isLogicalDomain)
-        {}
+		CustomLayoutNode(
+			bool isVertical,
+			ImVec2 domainPos,
+			ImVec2 domainSize,
+			const std::vector<float>& splitRatios = {},
+			CustomWindowFunc customFunc = nullptr
+		)
+			: m_isVertical(isVertical),
+			m_domainPos(domainPos),
+			m_domainSize(domainSize),
+			m_splitRatios(splitRatios),
+			m_splitterWidth(4.0f),
+			m_pfnCustomWindowFunc(customFunc)
+		{
+			if (isVertical) {
+				assert(!splitRatios.empty() && "Vertical layout must have at least one split ratio");
+			}
+		}
 
-        CustomLayoutNode(
-            float splitterRatio)
-            : m_splitterWidth(2.f),
-              m_level(1),
-              m_domainPos(ImVec2(0.f, 0.f)),
-              m_domainSize(ImVec2(0.f, 0.f)),
-              m_pfnCustomWindowFunc(nullptr),
-              m_isLogicalDomain(true),
-              m_pLeft(nullptr),
-              m_pRight(nullptr),
-              m_splitterRatio(splitterRatio)
-        {}
+		
+		CustomLayoutNode(CustomWindowFunc customFunc)
+			: m_isVertical(false),
+			m_domainPos(ImVec2(0, 0)),
+			m_domainSize(ImVec2(0, 0)),
+			m_splitterWidth(0),
+			m_pfnCustomWindowFunc(customFunc)
+		{
+		}
 
-        CustomLayoutNode(CustomWindowFunc customFunc)
-            : m_splitterWidth(2.f),
-              m_level(0),
-              m_domainPos(ImVec2(0.f, 0.f)),
-              m_domainSize(ImVec2(0.f, 0.f)),
-              m_pfnCustomWindowFunc(customFunc),
-              m_isLogicalDomain(false),
-              m_pLeft(nullptr),
-              m_pRight(nullptr),
-              m_splitterRatio(0)
-        {}
+		~CustomLayoutNode() {
+			for (auto* child : m_children) {
+				delete child;
+			}
+		}
 
-        ~CustomLayoutNode()
-        {
-            if (m_pLeft)
-            {
-                delete m_pLeft;
-            }
+		void AddVerticalChild(CustomLayoutNode* child) {
+			assert(m_isVertical && "Only vertical nodes can have dynamic children");
+			m_children.push_back(child);
+			if (m_splitRatios.empty()) {
+				m_splitRatios.push_back(1.0f);
+			}
+		}
+		void SetHorizontalChildren(CustomLayoutNode* left, CustomLayoutNode* middle = nullptr, CustomLayoutNode* right = nullptr) {
+			assert(!m_isVertical && "Horizontal nodes can only have fixed children");
+			m_children.clear();
+			if (left) m_children.push_back(left);
+			if (middle) m_children.push_back(middle);
+			if (right) m_children.push_back(right);
+			assert(m_children.size() <= 3 && "Horizontal nodes support max 3 children");
+		}
 
-            if (m_pRight)
-            {
-                delete m_pRight;
-            }
-        }
+		
+		void ResizeNodeAndChildren(ImVec2 newPos, ImVec2 newSize) {
+			m_domainPos = newPos;
+			m_domainSize = newSize;
 
-        CustomLayoutNode* GetLeftChild() const { return m_pLeft; }
-        CustomLayoutNode* GetRightChild() const { return m_pRight; }
+			if (IsWindowNode()) return;
+
+			if (m_isVertical) {
+				float totalHeight = m_domainSize.y;
+				float accumulatedY = m_domainPos.y;
+
+				for (size_t i = 0; i < m_children.size(); ++i) {
+					float ratio = (i < m_splitRatios.size()) ? m_splitRatios[i] : 1.0f;
+					float childHeight = totalHeight * ratio;
+
+					m_children[i]->ResizeNodeAndChildren(
+						ImVec2(m_domainPos.x, accumulatedY),
+						ImVec2(m_domainSize.x, childHeight)
+					);
+					accumulatedY += childHeight;
+				}
+			}
+			else {
+				float childWidth = m_domainSize.x / m_children.size();
+				for (size_t i = 0; i < m_children.size(); ++i) {
+					m_children[i]->ResizeNodeAndChildren(
+						ImVec2(m_domainPos.x + i * childWidth, m_domainPos.y),
+						ImVec2(childWidth, m_domainSize.y)
+					);
+				}
+			}
+		}
+
+      
         ImVec2 GetDomainPos() const { return m_domainPos; }
         ImVec2 GetDomainSize() const { return m_domainSize; }
-        uint32_t GetLevel() const { return m_level; }
-        float GetSplitterStartCoord() const
-        {
-            if (m_level % 2 == 1)
-            {
-                return m_domainPos.x + m_splitterRatio * m_domainSize.x;
-            }
-            else
-            {
-                return m_domainPos.y + m_splitterRatio * m_domainSize.y;
-            }
-        }
-        float GetSplitterWidth() const { return m_splitterWidth; }
-        ImVec2 GetSplitterPos() const
-        {
-            if (m_level % 2 == 1)
-            {
-                float x = m_domainPos.x + m_splitterRatio * m_domainSize.x;
-                return ImVec2(x, m_domainPos.y);
-            }
-            else
-            {
-                float y = m_domainPos.y + m_splitterRatio * m_domainSize.y;
-                return ImVec2(m_domainPos.x, y);
-            }
-        }
-        bool IsLogicalDomain() const { return m_isLogicalDomain; }
+		void SetDomainPos(ImVec2 pos) { m_domainPos = pos; }
+		void SetDomainSize(ImVec2 size) { m_domainSize = size; }
+		float GetSplitterWidth() const { return m_splitterWidth; }
+		const std::vector<float>& GetSplitRatios() const { return m_splitRatios; }
+		void SetSplitRatios(const std::vector<float>& ratios) {
+			assert(m_isVertical || ratios.size() <= 3);
+			m_splitRatios = ratios;
+		}
+		bool IsVertical() const { return m_isVertical; }
+		bool IsWindowNode() const { return m_pfnCustomWindowFunc != nullptr; }
+		bool IsVerticalSplitter() const { return m_isVertical && !IsWindowNode(); }
+		bool IsHorizontalSplitter() const { return !m_isVertical && !IsWindowNode(); }
+		const std::vector<CustomLayoutNode*>& GetChildren() const { return m_children; }
 
-        void SetDomainPos(ImVec2 pos) { m_domainPos = pos; }
-        void SetDomainSize(ImVec2 size) { m_domainSize = size; }
-        void SetSplitterRatio(float ratio) { m_splitterRatio = ratio; }
 
-        void CreateLeftChild(float ratio)
-        {
-            assert((void("ERROR: Only logical domain can have children."), m_isLogicalDomain == true));
-            m_pLeft = new CustomLayoutNode(ratio);
-            m_pLeft->m_level = m_level + 1;
-        }
 
-        void CreateLeftChild(CustomWindowFunc windowFunc)
-        {
-            assert((void("ERROR: Only logical domain can have children."), m_isLogicalDomain == true));
-            m_pLeft = new CustomLayoutNode(windowFunc);
-            m_pLeft->m_level = m_level + 1;
-        }
+        //render function 
 
-        void CreateRightChild(float ratio)
-        {
-            assert((void("ERROR: Only logical domain can have children."), m_isLogicalDomain == true));
-            m_pRight = new CustomLayoutNode(ratio);
-            m_pRight->m_level = m_level + 1;
-        }
 
-        void CreateRightChild(CustomWindowFunc windowFunc)
-        {
-            assert((void("ERROR: Only logical domain can have children."), m_isLogicalDomain == true));
-            m_pRight = new CustomLayoutNode(windowFunc);
-            m_pRight->m_level = m_level + 1;
-        }
+		void RenderNodeAndChildren() {
+			if (IsWindowNode()) {
+				ImGui::SetNextWindowPos(m_domainPos);
+				ImGui::SetNextWindowSize(m_domainSize);
+				ImGui::Begin("Window", nullptr,
+					ImGuiWindowFlags_NoTitleBar |
+					ImGuiWindowFlags_NoResize |
+					ImGuiWindowFlags_NoMove |
+					ImGuiWindowFlags_NoCollapse);
 
-        void BeginEndNodeAndChildren()
-        {
-            if (m_isLogicalDomain)
-            {
-                if (m_pLeft)
-                {
-                    m_pLeft->BeginEndNodeAndChildren();
-                }
+				if (m_pfnCustomWindowFunc) {
+					m_pfnCustomWindowFunc();
+				}
 
-                if (m_pRight)
-                {
-                    m_pRight->BeginEndNodeAndChildren();
-                }
-            }
-            else
-            {
-                ImGui::SetNextWindowPos(m_domainPos);
-                ImGui::SetNextWindowSize(m_domainSize);
-                if (m_pfnCustomWindowFunc)
-                {
-                    m_pfnCustomWindowFunc();
-                }
-            }
-        }
+				ImGui::End();
+				return;
+			}
 
-        void ResizeNodeAndChildren(
-            ImVec2 newPos,
-            ImVec2 newSize)
-        {
+			if (m_isVertical) {
+				for (size_t i = 0; i < m_children.size() - 1; ++i) {
+					float splitterY = m_domainPos.y;
+					for (size_t j = 0; j <= i; ++j) {
+						splitterY += m_domainSize.y * m_splitRatios[j];
+					}
 
-            m_domainPos = newPos;
-            m_domainSize = newSize;
+					ImGui::GetWindowDrawList()->AddLine(
+						ImVec2(m_domainPos.x, splitterY),
+						ImVec2(m_domainPos.x + m_domainSize.x, splitterY),
+						IM_COL32(100, 100, 100, 255),
+						m_splitterWidth
+					);
+				}
+			}
+			else {
+				for (size_t i = 1; i < m_children.size(); ++i) {
+					float splitterX = m_domainPos.x + (m_domainSize.x / m_children.size()) * i;
 
-            if (m_isLogicalDomain)
-            {
-                float splitterStartCoordinate = GetSplitterStartCoord();
-                float splitterWidth = GetSplitterWidth();
-                if (m_level % 2 == 1)
-                {
-                    m_pLeft->ResizeNodeAndChildren(m_domainPos, ImVec2(splitterStartCoordinate - m_domainPos.x, m_domainSize.y));
-                    m_pRight->ResizeNodeAndChildren(ImVec2(splitterStartCoordinate + splitterWidth, m_domainPos.y),
-                        ImVec2(m_domainSize.x -
-                            (splitterStartCoordinate - m_domainPos.x + splitterWidth),
-                            m_domainSize.y));
-                }
-                else
-                {
-                    m_pLeft->ResizeNodeAndChildren(m_domainPos, ImVec2(m_domainSize.x,
-                        splitterStartCoordinate - m_domainPos.y));
-                    m_pRight->ResizeNodeAndChildren(ImVec2(m_domainPos.x, splitterStartCoordinate + splitterWidth),
-                        ImVec2(m_domainSize.x,
-                            m_domainSize.y -
-                            (splitterStartCoordinate - m_domainPos.y + splitterWidth)));
-                }
-            }
+					ImGui::GetWindowDrawList()->AddLine(
+						ImVec2(splitterX, m_domainPos.y),
+						ImVec2(splitterX, m_domainPos.y + m_domainSize.y),
+						IM_COL32(100, 100, 100, 255),
+						m_splitterWidth
+					);
+				}
+			}
 
-        }
+			for (auto* child : m_children) {
+				child->RenderNodeAndChildren();
+			}
+		}
+		
+        // Interaction function
+		CustomLayoutNode* GetHoveredSplitter(const ImVec2& mousePos) {
+			if (IsWindowNode()) return nullptr;
 
-        CustomLayoutNode* GetHoverSplitter()
-        {
-            if (m_isLogicalDomain == false)
-            {
-                return nullptr;
-            }
-            ImVec2 splitterMin;
-            ImVec2 splitterMax;
+			const float hitPadding = 8.0f; 
 
-            constexpr float SplitterWidthPadding = 2.f;
+			if (m_isVertical) {
+				
+				float accumulatedY = m_domainPos.y;
+				for (size_t i = 0; i < m_children.size() - 1; ++i) {
+					accumulatedY += m_domainSize.y * m_splitRatios[i];
+					if (mousePos.y >= accumulatedY - hitPadding &&
+						mousePos.y <= accumulatedY + hitPadding) {
+						return this;
+					}
+				}
+			}
+			else {
+				float childWidth = m_domainSize.x / m_children.size();
+				for (size_t i = 1; i < m_children.size(); ++i) {
+					float splitterX = m_domainPos.x + childWidth * i;
+					if (mousePos.x >= splitterX - hitPadding &&
+						mousePos.x <= splitterX + hitPadding) {
+						return this;
+					}
+				}
+			}
 
-            if (m_level % 2 == 1)
-            {
-                splitterMin.x = m_domainPos.x + m_splitterRatio * m_domainSize.x - SplitterWidthPadding;
-                splitterMin.y = m_domainPos.y;
-                splitterMax.x = splitterMin.x + m_splitterWidth + SplitterWidthPadding;
-                splitterMax.y = m_domainPos.y + m_domainSize.y;
-            }
-            else
-            {
-                splitterMin.x = m_domainPos.x;
-                splitterMin.y = m_domainPos.y + m_splitterRatio * m_domainSize.y - SplitterWidthPadding;
-                splitterMax.x = m_domainPos.x + m_domainSize.x;
-                splitterMax.y = splitterMin.y + m_splitterWidth + SplitterWidthPadding;
-            }
+			for (auto* child : m_children) {
+				if (auto* hovered = child->GetHoveredSplitter(mousePos)) {
+					return hovered;
+				}
+			}
 
-            if (ImGui::IsMouseHoveringRect(splitterMin, splitterMax, false))
-            {
-                return this;
-            }
-            else
-            {
-                if (m_level % 2 == 1)
-                {
-                    // Left-Right
-                    if (ImGui::IsMouseHoveringRect(m_domainPos, ImVec2(splitterMin.x, splitterMax.y), false))
-                    {
-                        return m_pLeft->GetHoverSplitter();
-                    }
-                    else
-                    {
-                        return m_pRight->GetHoverSplitter();
-                    }
-                }
-                else
-                {
-                    // Top-Down
-                    if (ImGui::IsMouseHoveringRect(m_domainPos, ImVec2(splitterMax.x, splitterMin.y), false))
-                    {
-                        return m_pLeft->GetHoverSplitter();
-                    }
-                    else
-                    {
-                        return m_pRight->GetHoverSplitter();
-                    }
-                }
-            }
-        }
+			return nullptr;
+		}
+
+		bool HandleSplitterDrag(CustomLayoutNode* activeSplitter, const ImVec2& mouseDelta) {
+			if (this != activeSplitter) return false;
+
+			if (m_isVertical) {
+				
+				float totalHeight = m_domainSize.y;
+				float deltaRatio = mouseDelta.y / totalHeight;
+
+				for (size_t i = 0; i < m_splitRatios.size(); ++i) {
+					if (i == 0) {
+						m_splitRatios[i] += deltaRatio;
+						m_splitRatios[i] = ImClamp(m_splitRatios[i], 0.1f, 0.9f);
+					}
+					else {
+						m_splitRatios[i] -= deltaRatio;
+						m_splitRatios[i] = ImClamp(m_splitRatios[i], 0.1f, 0.9f);
+					}
+				}
+			}
+			else {
+				
+				float totalWidth = m_domainSize.x;
+				float deltaRatio = mouseDelta.x / totalWidth;
+
+				
+				if (m_children.size() == 2) {
+					m_splitRatios[0] += deltaRatio;
+					m_splitRatios[0] = ImClamp(m_splitRatios[0], 0.1f, 0.9f);
+					m_splitRatios[1] = 1.0f - m_splitRatios[0];
+				}
+		
+			}
+
+			
+			ResizeNodeAndChildren(m_domainPos, m_domainSize);
+			return true;
+		}
+       
+       
 
     private:
-        void SetLeftChild(CustomLayoutNode* pNode)
-        {
-            m_pLeft = pNode;
-            m_pLeft->m_level = m_level + 1;
-        }
-
-        void SetRightChild(CustomLayoutNode* pNode)
-        {
-            m_pRight = pNode;
-            m_pRight->m_level = m_level + 1;
-        }
-
-
-        CustomLayoutNode* m_pLeft;  // Or top for the even level splitters.
-        CustomLayoutNode* m_pRight; // Or down for the even level splitters.
-        uint32_t          m_level;  // Used to determine whether it is a vertical splitter or a horizontal splitter. 
-                                    // Only for a splitter.
-        ImVec2 m_domainPos;
-        ImVec2 m_domainSize;
-
-        float       m_splitterRatio; // (splitterPos - domainPos) / domainSize.
-        const float m_splitterWidth;
-
-        CustomWindowFunc m_pfnCustomWindowFunc;
-
-        bool m_isLogicalDomain;
+		bool m_isVertical;
+		ImVec2 m_domainPos;
+		ImVec2 m_domainSize;
+		std::vector<float> m_splitRatios;
+		const float m_splitterWidth;
+		CustomWindowFunc m_pfnCustomWindowFunc;
+		std::vector<CustomLayoutNode*> m_children;
     };
 
     class CustomLayout
     {
+	private:
+		CustomLayoutNode* m_pActiveSplitter = nullptr;
+		ImVec2 m_lastViewportSize;
+
     public:
         explicit CustomLayout(CustomLayoutNode* root)
             : m_pRoot(root),
@@ -291,9 +273,49 @@ namespace FrameGUILayout
               m_lastViewport(ImVec2(0.f, 0.f)),
               m_heldMouseCursor(0)
         {
-            assert((void("ERROR: The root node pointer cannot be NULL to init CustomLayout."), root != nullptr));
+            assert((void("ERROR: The root node pointer cannot be NULL to init FrameGUILayout."), root != nullptr));
         }
         
+		~CustomLayout()
+		{
+			if (m_pRoot)
+			{
+				delete m_pRoot;
+			}
+		}
+
+		void UpdateAndRender() {
+			ImGuiViewport* viewport = ImGui::GetMainViewport();
+			if (viewport->WorkSize.x != m_lastViewportSize.x ||
+				viewport->WorkSize.y != m_lastViewportSize.y) {
+				m_pRoot->ResizeNodeAndChildren(viewport->WorkPos, viewport->WorkSize);
+				m_lastViewportSize = viewport->WorkSize;
+			}
+
+
+			ImVec2 mousePos = ImGui::GetMousePos();
+
+			if (!ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+				m_pActiveSplitter = m_pRoot->GetHoveredSplitter(mousePos);
+			}
+
+			if (m_pActiveSplitter) {
+				ImGui::SetMouseCursor(m_pActiveSplitter->IsVertical() ?
+					ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
+			}
+
+			if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+				if (m_pActiveSplitter) {
+					ImVec2 delta = ImGui::GetMouseDragDelta();
+					m_pActiveSplitter->HandleSplitterDrag(m_pActiveSplitter, delta);
+					ImGui::ResetMouseDragDelta();
+				}
+			}
+
+
+			m_pRoot->RenderNodeAndChildren();
+		}
+
         void ResizeAll()
         {
             ImGuiViewport* pViewport = ImGui::GetMainViewport();
@@ -306,95 +328,18 @@ namespace FrameGUILayout
         }
 
 
-        void BeginEndLayout()
-        {
-            ResizeAll();
 
 
-            if (m_splitterHeld == false)
-            {
-                CustomLayoutNode* pSplitterDomain = m_pRoot->GetHoverSplitter();
-                if (pSplitterDomain)
-                {
+		CustomLayoutNode* m_pRoot;
 
-                    bool isLeftRightSplitter = (pSplitterDomain->GetLevel() % 2 == 1);
+		bool  m_splitterHeld;
+		float m_splitterBottonDownDelta;
 
-                    isLeftRightSplitter ? ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW) :
-                                          ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+		int   m_heldMouseCursor;
 
+		CustomLayoutNode* m_pHeldSplitterDomain;
 
-                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-                    {
-                        m_splitterHeld = true;
-
-                        ImVec2 splitterPos = pSplitterDomain->GetSplitterPos();
-                        ImVec2 mousePos = ImGui::GetMousePos();
-                        m_splitterBottonDownDelta = isLeftRightSplitter ? splitterPos.x - mousePos.x :
-                            splitterPos.y - mousePos.y;
-
-                        m_pHeldSplitterDomain = pSplitterDomain;
-                    }
-                }
-            }
-            else
-            {
-                if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
-                {
-                    bool isLeftRightSplitter = (m_pHeldSplitterDomain->GetLevel() % 2 == 1);
-                    ImVec2 domainPos = m_pHeldSplitterDomain->GetDomainPos();
-                    ImVec2 domainSize = m_pHeldSplitterDomain->GetDomainSize();
-                    ImVec2 mousePos = ImGui::GetMousePos();
-                    float newSplitterRatio = -1.f;
-
-                    if (isLeftRightSplitter)
-                    {
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        float newSplitterCoord = m_splitterBottonDownDelta + mousePos.x;
-                        float newSplitterAxisLen = newSplitterCoord - domainPos.x;
-                        newSplitterRatio = newSplitterAxisLen / domainSize.x;
-                    }
-                    else
-                    {
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                        float newSplitterCoord = m_splitterBottonDownDelta + mousePos.y;
-                        float newSplitterAxisLen = newSplitterCoord - domainPos.y;
-                        newSplitterRatio = newSplitterAxisLen / domainSize.y;
-                    }
-
-                    m_pHeldSplitterDomain->SetSplitterRatio(newSplitterRatio);
-                    m_pHeldSplitterDomain->ResizeNodeAndChildren(domainPos, domainSize);
-                }
-                else
-                {
-                    m_splitterHeld = false;
-                }
-            }
-
-
-            if (m_pRoot != nullptr)
-            {
-                m_pRoot->BeginEndNodeAndChildren();
-            }
-        }
-
-        ~CustomLayout()
-        {
-            if (m_pRoot)
-            {
-                delete m_pRoot;
-            }
-        }
-
-        CustomLayoutNode* m_pRoot;
-
-        bool  m_splitterHeld;
-        float m_splitterBottonDownDelta;
-        
-        int   m_heldMouseCursor; 
-        
-        CustomLayoutNode* m_pHeldSplitterDomain;
-
-        ImVec2 m_lastViewport;
+		ImVec2 m_lastViewport;
     };
 
     bool BeginBottomMainMenuBar()

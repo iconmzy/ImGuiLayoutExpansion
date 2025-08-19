@@ -64,18 +64,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
 
-	FrameGUILayout::CustomLayoutNode* root = new FrameGUILayout::CustomLayoutNode(true, 1, ImVec2(0, 0), ImVec2(0, 0), 0.7f);
 
-	root->CreateLeftChild(0.7f);
-	root->GetLeftChild()->CreateLeftChild(LeftPanelFunc);    
-	root->GetLeftChild()->CreateRightChild(MainWindowFunc); 
 
-	root->CreateRightChild(0.7f);
-	root->GetRightChild()->CreateLeftChild(RightPanelFunc);  
-	root->GetRightChild()->CreateRightChild(ConsoleFunc);    
+	auto* root = new FrameGUILayout::CustomLayoutNode(
+		true, 
+		ImVec2(0, 0),
+		ImVec2(0, 0),
+		{ 0.3f, 0.7f }  
+	);
+
+	auto* topBar = new FrameGUILayout::CustomLayoutNode(false);
+	topBar->SetHorizontalChildren(
+		new FrameGUILayout::CustomLayoutNode(LeftPanelFunc),
+		new FrameGUILayout::CustomLayoutNode(MainWindowFunc),
+		new FrameGUILayout::CustomLayoutNode(RightPanelFunc)
+	);
+
+
+
+	auto* bottom = new FrameGUILayout::CustomLayoutNode(false);
+	bottom->SetHorizontalChildren(
+		new FrameGUILayout::CustomLayoutNode(ConsoleFunc)
+	);
+
+	root->AddVerticalChild(topBar);
+	root->AddVerticalChild(bottom);
 
 	FrameGUILayout::CustomLayout layout(root);
-
 
 	bool done = false;
 	while (!done)
@@ -97,7 +112,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
 
-		layout.BeginEndLayout();
+		layout.UpdateAndRender();
 
 
 		ImGui::Render();
