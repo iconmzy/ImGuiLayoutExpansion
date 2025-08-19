@@ -39,14 +39,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imm32.lib       
 )
 
-#SETTING Unicode 
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    UNICODE
-    _UNICODE
-    _CRT_SECURE_NO_WARNINGS  
-)
-
-
 
 
 install(TARGETS ${PROJECT_NAME}
