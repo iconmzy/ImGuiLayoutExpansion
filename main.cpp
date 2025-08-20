@@ -6,13 +6,13 @@
 #include <d3d11.h>
 #include <tchar.h>
 
-// DX globals
+
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain* g_pSwapChain = nullptr;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
-// Prototypes
+
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static bool CreateDeviceD3D(HWND hWnd);
@@ -20,7 +20,7 @@ static void CleanupDeviceD3D();
 static void CreateRenderTarget();
 static void CleanupRenderTarget();
 
-// Sample window callbacks
+
 static void WinLat() { ImGui::Begin("Latitude");  ImGui::Text("Lat content");  ImGui::End(); }
 static void WinLon() { ImGui::Begin("Longitude"); ImGui::Text("Lon content");  ImGui::End(); }
 static void WinAlt() { ImGui::Begin("Altitude");  ImGui::Text("Alt content");  ImGui::End(); }
@@ -41,33 +41,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     ImGui_ImplWin32_Init(hwnd); ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
     using namespace FrameGUILayout;
-    // Build root vertical splitter with 3 rows
-    auto* root = new CustomLayoutNode(true, "RootRows");
+    
+    auto* root = new CustomLayoutNode(false, "RootRows");
 
-    // Row 0: [Lat | Lon | Alt]
-    auto* row0 = new CustomLayoutNode(false, "Geodetic");
-    row0->SetHorizontalChildren(
+
+    auto* row0 = new CustomLayoutNode(true, "Geodetic");
+    row0->SetVerticalChildren(
         new CustomLayoutNode(&WinLat, "Latitude"),
         new CustomLayoutNode(&WinLon, "Longitude"),
         new CustomLayoutNode(&WinAlt, "Altitude")
     );
 
-    // Row 1: [Yaw | Pitch | Roll]
-    auto* row1 = new CustomLayoutNode(false, "Attitude");
-    row1->SetHorizontalChildren(
+   
+    auto* row1 = new CustomLayoutNode(true, "Attitude");
+    row1->SetVerticalChildren(
         new CustomLayoutNode(&WinYaw, "Yaw"),
         new CustomLayoutNode(&WinPitch, "Pitch"),
         new CustomLayoutNode(&WinRoll, "Roll")
     );
 
-    // Row 2: [Console only]
-    static void (*WinConsole)() = +[]() { ImGui::Begin("Console"); ImGui::TextColored(ImVec4(1, 1, 0, 1), "[INFO] Ready"); ImGui::End(); };
-    auto* row2 = new CustomLayoutNode(false, "ConsoleRow");
-    row2->SetHorizontalChildren(new CustomLayoutNode(WinConsole, "Console"));
 
-    root->AddVerticalChild(row0);
-    root->AddVerticalChild(row1);
-    root->AddVerticalChild(row2);
+    static void (*WinConsole)() = +[]() { ImGui::Begin("Console"); ImGui::TextColored(ImVec4(1, 1, 0, 1), "[INFO] Ready"); ImGui::End(); };
+    auto* row2 = new CustomLayoutNode(true, "ConsoleRow");
+    row2->SetVerticalChildren(new CustomLayoutNode(WinConsole, "Console"));
+
+    root->AddHorizontalChild(row0);
+    root->AddHorizontalChild(row1);
+    root->AddHorizontalChild(row2);
 
     CustomLayout layout(root);
 

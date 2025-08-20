@@ -18,37 +18,37 @@
 #include <cassert>
 #include <algorithm>
 
-// User window callback
+
 using CustomWindowFunc = void (*)();
 
 namespace FrameGUILayout {
 
     class CustomLayoutNode;
 
-    // Helpers
+    
     static inline float Clamp01(float v) { return v < 0.f ? 0.f : (v > 1.f ? 1.f : v); }
 
     // A single node in the layout tree.
     // Node types:
-    //  - Window node: holds a CustomWindowFunc; it's a leaf.
-    //  - Splitter node: vertical (rows) or horizontal (columns). Children are nodes.
+    //  - Window node: holds a CustomWindowFunc; 
+    //  - Splitter node: vertical (rows) or horizontal (columns). 
     class CustomLayoutNode {
     public:
-        // Splitter constructor
+        
         CustomLayoutNode(bool isVertical, const char* label = nullptr)
             : m_isVertical(isVertical), m_label(label ? label : (isVertical ? "Vertical" : "Horizontal"))
         {
             m_visible = true;
-            m_splitterWidth = 4.0f;
+            m_splitterWidth = 1.0f;
             m_lastVisibleCount = 0;
             m_equalizeOnVisibleChange = true;
-            m_minRatio = 0.05f; // min size per visible child (5%)
+            m_minRatio = 0.05f; // min size per visible child windows 
             m_pfnCustomWindowFunc = nullptr;
             m_domainPos = ImVec2(0, 0);
             m_domainSize = ImVec2(0, 0);
         }
 
-        // Window (leaf) constructor
+        
         CustomLayoutNode(CustomWindowFunc func, const char* label)
             : m_isVertical(false), m_label(label ? label : "Window"), m_pfnCustomWindowFunc(func)
         {
@@ -65,7 +65,7 @@ namespace FrameGUILayout {
             for (auto* c : m_children) delete c;
         }
 
-        // --- Structure building ---
+        
         void AddVerticalChild(CustomLayoutNode* child) {
             assert(IsVerticalSplitter() && "AddVerticalChild only valid on vertical splitter nodes");
             if (!child) return;
@@ -73,8 +73,15 @@ namespace FrameGUILayout {
             m_splitRatios.resize(m_children.size(), 0.0f);
             m_lastVisibleCount = 0; // force equalize on next layout
         }
+		void AddHorizontalChild(CustomLayoutNode* child) {
+			assert(IsHorizontalSplitter() && "AddVerticalChild only valid on vertical splitter nodes");
+			if (!child) return;
+			m_children.push_back(child);
+			m_splitRatios.resize(m_children.size(), 0.0f);
+			m_lastVisibleCount = 0; // force equalize on next layout
+		}
 
-        // Up to 3 children; nullptrs ignored (treated as absent)
+        
         void SetHorizontalChildren(CustomLayoutNode* left, CustomLayoutNode* middle = nullptr, CustomLayoutNode* right = nullptr) {
             assert(IsHorizontalSplitter() && "SetHorizontalChildren only valid on horizontal splitter nodes");
             m_children.clear();
@@ -86,49 +93,68 @@ namespace FrameGUILayout {
             m_lastVisibleCount = 0; // force equalize on next layout
         }
 
-        // Optional label (used in control panel)
+		void SetVerticalChildren(CustomLayoutNode* left, CustomLayoutNode* middle = nullptr, CustomLayoutNode* right = nullptr) {
+			assert(IsVerticalSplitter() && "SetVerticalChildren only valid on Vertical splitter nodes");
+			m_children.clear();
+			if (left)   m_children.push_back(left);
+			if (middle) m_children.push_back(middle);
+			if (right)  m_children.push_back(right);
+			assert(m_children.size() <= 3 && "Horizontal nodes support max 3 children");
+			m_splitRatios.resize(m_children.size(), 0.0f);
+			m_lastVisibleCount = 0; // force equalize on next layout
+		}
+
         const std::string& GetLabel() const { return m_label; }
         void SetLabel(const char* label) { if (label) m_label = label; }
 
-        // Visibility
+        
         void SetVisible(bool v) { m_visible = v; }
         bool IsVisibleFlag() const { return m_visible; }
 
-        // Effective visibility: visible AND (leaf OR has any effectively visible child)
+        //DFS
         bool IsEffectivelyVisible() const {
             if (!m_visible) return false;
             if (IsWindowNode()) return true;
             for (auto* c : m_children) if (c && c->IsEffectivelyVisible()) return true;
             return false;
         }
+		void SetDFSVisible(bool new_status){
+            if (IsWindowNode()) return;
+            SetVisible(new_status);
+            for (auto* c : m_children) {
+                c->SetVisible(new_status);
+            }
+			
+		}
 
-        // Domain setters (usually called by parent)
+
+        
         void ResizeNodeAndChildren(ImVec2 newPos, ImVec2 newSize) {
             m_domainPos = newPos; m_domainSize = newSize;
-            if (!IsEffectivelyVisible()) return; // nothing to place
+            if (!IsEffectivelyVisible()) return; 
 
             if (IsWindowNode()) {
-                // We don't ImGui::Begin here; user callback should Begin with its own name.
+                
                 ImGui::SetNextWindowPos(m_domainPos);
                 ImGui::SetNextWindowSize(m_domainSize);
                 if (m_pfnCustomWindowFunc) m_pfnCustomWindowFunc();
                 return;
             }
 
-            // Ensure ratios for current visible set
+            
             EqualizeIfVisibleCountChanged();
 
-            // Build list of visible children
+            
             std::vector<int> visIdx;
             visIdx.reserve(m_children.size());
             for (int i = 0; i < (int)m_children.size(); ++i)
                 if (m_children[i] && m_children[i]->IsEffectivelyVisible()) visIdx.push_back(i);
             if (visIdx.empty()) return;
 
-            // Sum ratios for visible subset
+            
             float sum = 0.f;
             for (int i : visIdx) sum += m_splitRatios[i];
-            if (sum <= 1e-6f) { // safety: equalize
+            if (sum <= 1e-6f) {
                 float eq = 1.f / visIdx.size();
                 for (int i : visIdx) m_splitRatios[i] = eq;
                 sum = 1.f;
@@ -156,10 +182,10 @@ namespace FrameGUILayout {
             }
         }
 
-        // Rendering split lines and children (window nodes already rendered in Resize)
+        // Rendering split lines and children 
         void RenderNodeAndChildren() {
             if (!IsEffectivelyVisible()) return;
-            if (IsWindowNode()) return; // already rendered via callback
+            if (IsWindowNode()) return; 
 
             // Draw splitters between visible children
             std::vector<int> visIdx;
@@ -191,15 +217,15 @@ namespace FrameGUILayout {
                 }
             }
 
-            // Recurse
+            
             for (auto* c : m_children) if (c) c->RenderNodeAndChildren();
         }
 
-        // Hit-test splitters; returns true and fills out params if hovering this node's splitter
+        
         bool FindHoveredSplitter(const ImVec2& mousePos, CustomLayoutNode*& outNode, int& outBoundaryIndex) {
             outNode = nullptr; outBoundaryIndex = -1;
             if (!IsEffectivelyVisible() || IsWindowNode()) {
-                // still need to traverse children for nested hits
+                
             }
             else {
                 const float pad = 8.f;
@@ -230,19 +256,19 @@ namespace FrameGUILayout {
                     }
                 }
             }
-            // Recurse children
+            
             for (auto* c : m_children) if (c) {
                 if (c->FindHoveredSplitter(mousePos, outNode, outBoundaryIndex)) return true;
             }
             return false;
         }
 
-        // Handle drag for the specific boundary index (between visible child k and k+1)
+       
         bool HandleSplitterDragAt(int boundaryIndex, const ImVec2& mouseDelta) {
             if (boundaryIndex < 0) return false;
             if (!IsEffectivelyVisible() || IsWindowNode()) return false;
 
-            // Build visible list
+  
             std::vector<int> visIdx;
             for (int i = 0; i < (int)m_children.size(); ++i)
                 if (m_children[i] && m_children[i]->IsEffectivelyVisible()) visIdx.push_back(i);
@@ -254,13 +280,13 @@ namespace FrameGUILayout {
             const float deltaRatio = (m_isVertical ? mouseDelta.y : mouseDelta.x) / total;
             if (deltaRatio == 0.f) return false;
 
-            // Adjust adjacent pair ratios (pre-normalized space)
+           
             int iA = visIdx[boundaryIndex];
             int iB = visIdx[boundaryIndex + 1];
 
             // Compute current sum across visible to keep others unchanged
             float sumVis = 0.f; for (int i : visIdx) sumVis += m_splitRatios[i]; if (sumVis <= 1e-6f) sumVis = 1.f;
-            // Work in normalized space to make clamping simpler
+
             float rA = m_splitRatios[iA] / sumVis;
             float rB = m_splitRatios[iB] / sumVis;
 
@@ -275,7 +301,7 @@ namespace FrameGUILayout {
                 float excess = (newA + newB) - pairSum;
                 // Reduce whichever grew more
                 if (deltaRatio > 0) newA -= excess; else newB -= excess;
-                // 使用括号调用，进一步规避宏： (std::max)(a,b)
+                
                 newA = (std::max)(minr, newA);
                 newB = (std::max)(minr, newB);
             }
@@ -289,8 +315,7 @@ namespace FrameGUILayout {
             return true;
         }
 
-        // UI helpers for control panel
-        // Returns current visible child count (effective)
+
         int VisibleChildCount() const {
             int c = 0; for (auto* x : m_children) if (x && x->IsEffectivelyVisible()) ++c; return c;
         }
@@ -302,10 +327,9 @@ namespace FrameGUILayout {
         const std::vector<CustomLayoutNode*>& GetChildren() const { return m_children; }
         std::vector<CustomLayoutNode*>& GetChildren() { return m_children; }
 
-        // Equalize ratios among currently visible children if visible count changed
         void EqualizeIfVisibleCountChanged() {
             if (IsWindowNode()) return;
-            // compute visible indices
+            
             std::vector<int> visIdx; visIdx.reserve(m_children.size());
             for (int i = 0; i < (int)m_children.size(); ++i)
                 if (m_children[i] && m_children[i]->IsEffectivelyVisible()) visIdx.push_back(i);
@@ -316,12 +340,12 @@ namespace FrameGUILayout {
             if (visCount == 0) return;
             float eq = 1.f / (float)visCount;
             for (size_t k = 0; k < visIdx.size(); ++k) m_splitRatios[visIdx[k]] = eq;
-            // Set invisible children share to 0 so they don't steal space
+            
             for (int i = 0; i < (int)m_children.size(); ++i)
                 if (std::find(visIdx.begin(), visIdx.end(), i) == visIdx.end()) m_splitRatios[i] = 0.f;
         }
 
-        // Expose domain for debug if needed
+       
         ImVec2 GetDomainPos() const { return m_domainPos; }
         ImVec2 GetDomainSize() const { return m_domainSize; }
 
@@ -334,17 +358,16 @@ namespace FrameGUILayout {
         ImVec2 m_domainSize{ 0,0 };
 
         std::vector<CustomLayoutNode*> m_children;
-        std::vector<float> m_splitRatios; // size == children.size(); invisible children can have 0
+        std::vector<float> m_splitRatios; 
 
         float m_splitterWidth = 4.0f;
         float m_minRatio = 0.05f; // min visible size per child
         size_t m_lastVisibleCount = 0;
         bool m_equalizeOnVisibleChange = true;
 
-        CustomWindowFunc m_pfnCustomWindowFunc = nullptr; // present => leaf
+        CustomWindowFunc m_pfnCustomWindowFunc = nullptr; 
     };
 
-    // Layout driver: manages resizing, dragging and the persistent Control Tab UI
     class CustomLayout {
     public:
         explicit CustomLayout(CustomLayoutNode* root) : m_root(root) {
@@ -354,28 +377,27 @@ namespace FrameGUILayout {
         ~CustomLayout() { delete m_root; }
 
         void UpdateAndRender() {
-            // Persistent control UI (always visible)
             DrawControlPanel();
 
             // Resize tree to viewport work area
             ImGuiViewport* vp = ImGui::GetMainViewport();
-            // 始终调用以响应可见性变化
+            
             m_root->ResizeNodeAndChildren(vp->WorkPos, vp->WorkSize);
             m_lastViewportSize = vp->WorkSize;
 
-            // Hit test splitters when not dragging
+
             ImVec2 mousePos = ImGui::GetMousePos();
             if (!ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
                 m_activeNode = nullptr; m_activeBoundaryIndex = -1;
                 m_root->FindHoveredSplitter(mousePos, m_activeNode, m_activeBoundaryIndex);
             }
 
-            // Update cursor
+
             if (m_activeNode) {
                 ImGui::SetMouseCursor(m_activeNode->IsVerticalSplitter() ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
             }
 
-            // Dragging
+     
             if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && m_activeNode) {
                 ImVec2 delta = ImGui::GetMouseDragDelta();
                 if (m_activeNode->HandleSplitterDragAt(m_activeBoundaryIndex, delta)) {
@@ -393,58 +415,48 @@ namespace FrameGUILayout {
         CustomLayoutNode* GetRoot() { return m_root; }
 
     private:
-        // Persistent, always-on control panel
+        // always-on control panel
         void DrawControlPanel() {
             ImGui::SetNextWindowBgAlpha(0.9f);
             ImGui::Begin("Layout Control", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
             ImGuiWindow* win = ImGui::GetCurrentWindow();
             if (win)
                 ImGui::BringWindowToDisplayFront(win);
-            ImGui::TextUnformatted("Toggle visibility of rows and child panes");
             ImGui::Separator();
 
-            // We assume root is a vertical splitter
-            if (!m_root->IsVerticalSplitter()) {
-                ImGui::TextColored(ImVec4(1, 0.6f, 0, 1), "Root is not vertical. Control panel expects a vertical root.");
-                ImGui::End();
-                return;
-            }
-
-            auto& rows = m_root->GetChildren();
-            if (ImGui::BeginTabBar("RowsTabBar", ImGuiTabBarFlags_FittingPolicyResizeDown | ImGuiTabBarFlags_Reorderable)) {
-                for (int r = 0; r < (int)rows.size(); ++r) {
-                    CustomLayoutNode* row = rows[r]; if (!row) continue;
-                    std::string tabName = row->GetLabel().empty() ? ("Row " + std::to_string(r)) : row->GetLabel();
+            auto& parentnodes = m_root->GetChildren();
+            if (ImGui::BeginTabBar("TabBar", ImGuiTabBarFlags_FittingPolicyResizeDown | ImGuiTabBarFlags_Reorderable)) {
+                for (int i = 0; i < (int)parentnodes.size(); ++i) {
+                    CustomLayoutNode* parentnode = parentnodes[i]; if (!parentnode) continue;
+                    std::string tabName = parentnode->GetLabel().empty() ? ("" + std::to_string(i)) : parentnode->GetLabel();
                     if (ImGui::BeginTabItem(tabName.c_str())) {
-                        bool rowVis = row->IsVisibleFlag();
-                        if (ImGui::Checkbox("Row Visible", &rowVis)) {
-                            row->SetVisible(rowVis);
-                        }
-                        bool effective = row->IsEffectivelyVisible();
-                        if (!effective && rowVis) {
-                            ImGui::TextColored(ImVec4(1, 0.6f, 0, 1), "No visible children -> row hidden effectively");
-                        }
+                        bool parentVis = parentnode->IsVisibleFlag();
+                        if (ImGui::Checkbox("BOX Visible", &parentVis)) {
+                            parentnode->SetDFSVisible(parentVis);
 
-                        if (!row->IsHorizontalSplitter()) {
-                            ImGui::TextDisabled("(This row is not a horizontal splitter)");
                         }
-                        else {
-                            auto& cols = row->GetChildren();
-                            for (int c = 0; c < (int)cols.size(); ++c) {
-                                CustomLayoutNode* col = cols[c]; if (!col) continue;
-                                std::string label = col->GetLabel().empty() ? ("Child " + std::to_string(c)) : col->GetLabel();
-                                bool v = col->IsVisibleFlag();
+                        if (parentnode->IsVisibleFlag()) {
+                            auto& childnodes = parentnode->GetChildren();
+                            for (int c = 0; c < (int)childnodes.size(); ++c) {
+                                CustomLayoutNode* childnode = childnodes[c]; if (!childnode) continue;
+                                std::string label = childnode->GetLabel().empty() ? ("Child " + std::to_string(c)) : childnode->GetLabel();
+                                bool v = childnode->IsVisibleFlag();
                                 if (ImGui::Checkbox(label.c_str(), &v)) {
-                                    col->SetVisible(v);
+                                    childnode->SetVisible(v);
+                                    //if every child not visible ,turn off parent
+                                    parentnode->SetVisible(parentnode->IsEffectivelyVisible());
                                 }
                             }
-                            if (ImGui::Button("Show All Children")) {
-                                for (auto* col : cols) if (col) col->SetVisible(true);
-                            }
-                            ImGui::SameLine();
-                            if (ImGui::Button("Hide All Children")) {
-                                for (auto* col : cols) if (col) col->SetVisible(false);
-                            }
+                             
+// 							if (ImGui::Button("Show All Child data")) {
+// 									for (auto* childnode : childnodes) if (childnode) childnode->SetVisible(true);
+// 							}
+// 							ImGui::SameLine();
+// 							if (ImGui::Button("Hide All Child data")) {
+// 									for (auto* childnode : childnodes) if (childnode) childnode->SetVisible(false);
+// 									parentnode->SetVisible(false);
+// 							}
+                            
                         }
 
                         ImGui::EndTabItem();
