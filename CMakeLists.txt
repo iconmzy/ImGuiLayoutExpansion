@@ -16,6 +16,7 @@ file(GLOB_RECURSE IMGUI_SOURCES
 )
 set(SOURCES 
     main.cpp
+    FrameGUILayout.cpp
     ${IMGUI_SOURCES}
 )
 

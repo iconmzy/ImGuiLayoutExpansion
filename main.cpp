@@ -1,4 +1,4 @@
-#include "CustomDearImGuiLayout.h"
+#include "FrameGUILayout.h"
 #include "windows.h"
 #include "imgui.h"
 #include "backends/imgui_impl_win32.h"
@@ -28,6 +28,7 @@ static void WinYaw() { ImGui::Begin("Yaw");       ImGui::Text("Yaw content");  I
 static void WinPitch() { ImGui::Begin("Pitch");     ImGui::Text("Pitch content"); ImGui::End(); }
 static void WinRoll() { ImGui::Begin("Roll");      ImGui::Text("Roll content"); ImGui::End(); }
 
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
     WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, hInstance, nullptr, nullptr, nullptr, nullptr, _T("ImGui Layout Demo"), nullptr };
@@ -40,36 +41,36 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     ImGuiIO& io = ImGui::GetIO(); (void)io; io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; ImGui::StyleColorsDark();
     ImGui_ImplWin32_Init(hwnd); ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-    using namespace FrameGUILayout;
     
-    auto* root = new CustomLayoutNode(false, "RootRows");
+    
+    auto* root = new FrameGUILayout::CustomLayoutNode(false, "RootRows");
 
 
-    auto* row0 = new CustomLayoutNode(true, "Geodetic");
+    auto* row0 = new FrameGUILayout::CustomLayoutNode(true, "Geodetic");
     row0->SetVerticalChildren(
-        new CustomLayoutNode(&WinLat, "Latitude"),
-        new CustomLayoutNode(&WinLon, "Longitude"),
-        new CustomLayoutNode(&WinAlt, "Altitude")
+        new FrameGUILayout::CustomLayoutNode(&WinLat, "Latitude"),
+        new FrameGUILayout::CustomLayoutNode(&WinLon, "Longitude"),
+        new FrameGUILayout::CustomLayoutNode(&WinAlt, "Altitude")
     );
 
    
-    auto* row1 = new CustomLayoutNode(true, "Attitude");
+    auto* row1 = new FrameGUILayout::CustomLayoutNode(true, "Attitude");
     row1->SetVerticalChildren(
-        new CustomLayoutNode(&WinYaw, "Yaw"),
-        new CustomLayoutNode(&WinPitch, "Pitch"),
-        new CustomLayoutNode(&WinRoll, "Roll")
+        new FrameGUILayout::CustomLayoutNode(&WinYaw, "Yaw"),
+        new FrameGUILayout::CustomLayoutNode(&WinPitch, "Pitch"),
+        new FrameGUILayout::CustomLayoutNode(&WinRoll, "Roll")
     );
 
 
     static void (*WinConsole)() = +[]() { ImGui::Begin("Console"); ImGui::TextColored(ImVec4(1, 1, 0, 1), "[INFO] Ready"); ImGui::End(); };
-    auto* row2 = new CustomLayoutNode(true, "ConsoleRow");
-    row2->SetVerticalChildren(new CustomLayoutNode(WinConsole, "Console"));
+    auto* row2 = new FrameGUILayout::CustomLayoutNode(true, "ConsoleRow");
+    row2->SetVerticalChildren(new FrameGUILayout::CustomLayoutNode(WinConsole, "Console"));
 
     root->AddHorizontalChild(row0);
     root->AddHorizontalChild(row1);
     root->AddHorizontalChild(row2);
 
-    CustomLayout layout(root);
+    FrameGUILayout::CustomLayout layout(root);
 
     bool done = false;
     while (!done) {
