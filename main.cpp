@@ -1,11 +1,17 @@
+#pragma once
 #include "FrameGUILayout.h"
 #include "windows.h"
 #include "imgui.h"
+#include "implot.h"
 #include "backends/imgui_impl_win32.h"
 #include "backends/imgui_impl_dx11.h"
 #include <d3d11.h>
 #include <tchar.h>
-
+#include <cmath> 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
@@ -21,13 +27,89 @@ static void CreateRenderTarget();
 static void CleanupRenderTarget();
 
 
-static void WinLat() { ImGui::Begin("Latitude");  ImGui::Text("Lat content");  ImGui::End(); }
+static void WinLat() {
+    ImGui::Begin("Latitude");
+    ImGui::Text("Lat content"); 
+    ImGui::End();
+}
 static void WinLon() { ImGui::Begin("Longitude"); ImGui::Text("Lon content");  ImGui::End(); }
 static void WinAlt() { ImGui::Begin("Altitude");  ImGui::Text("Alt content");  ImGui::End(); }
 static void WinYaw() { ImGui::Begin("Yaw");       ImGui::Text("Yaw content");  ImGui::End(); }
 static void WinPitch() { ImGui::Begin("Pitch");     ImGui::Text("Pitch content"); ImGui::End(); }
 static void WinRoll() { ImGui::Begin("Roll");      ImGui::Text("Roll content"); ImGui::End(); }
+static void RealtimePlots() {
+    ImGui::Begin("realtime Plot");
+    ImVec2 avail_size = ImGui::GetContentRegionAvail();
+    float plot_height = avail_size.y * 0.5f;
+    ImGui::BulletText("Move your mouse to change the data!");
+    //ImGui::BulletText("This example assumes 60 FPS. Higher FPS requires larger buffer size.");
+    static FrameGUILayout::ScrollingBuffer sdata1, sdata2;
+    static FrameGUILayout::RollingBuffer   rdata1, rdata2;
+    ImVec2 mouse = ImGui::GetMousePos();
+    static float t = 0;
+    t += ImGui::GetIO().DeltaTime;
+    sdata1.AddPoint(t, mouse.x * 0.0005f);
+    rdata1.AddPoint(t, mouse.x * 0.0005f);
+    sdata2.AddPoint(t, mouse.y * 0.0005f);
+    rdata2.AddPoint(t, mouse.y * 0.0005f);
 
+    static float history = 10.0f;
+    ImGui::SliderFloat("History", &history, 1, 30, "%.1f s");
+    rdata1.Span = history;
+    rdata2.Span = history;
+
+    static ImPlotAxisFlags flags = ImPlotAxisFlags_NoTickLabels;
+
+    if (ImPlot::BeginPlot("##Scrolling", ImVec2(-1, plot_height))) {
+        ImPlot::SetupAxes(nullptr, nullptr, flags, flags);
+        ImPlot::SetupAxisLimits(ImAxis_X1, t - history, t, ImGuiCond_Always);
+        ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 1);
+        ImPlot::SetNextFillStyle(IMPLOT_AUTO_COL, 0.5f);
+        
+        ImPlot::PlotShaded("Mouse X", 
+                          &sdata1.Data[0].x, &sdata1.Data[0].y, 
+                          sdata1.Data.size(), 
+                          -INFINITY, 
+                          0,  
+                          sdata1.Offset, 
+                          2 * sizeof(float));
+        
+
+        ImPlot::PlotLine("Mouse Y", 
+                        &sdata2.Data[0].x, &sdata2.Data[0].y, 
+                        sdata2.Data.size(), 
+                        0,  
+                        sdata2.Offset, 
+                        2 * sizeof(float));
+        
+        ImPlot::EndPlot();
+    }
+    
+
+    if (ImPlot::BeginPlot("##Rolling", ImVec2(-1, -1))) {
+        ImPlot::SetupAxes(nullptr, nullptr, flags, flags);
+        ImPlot::SetupAxisLimits(ImAxis_X1, 0, history, ImGuiCond_Always);
+        ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 1);
+        
+
+        ImPlot::PlotLine("Mouse X", 
+                        &rdata1.Data[0].x, &rdata1.Data[0].y, 
+                        rdata1.Data.size(), 
+                        0,  
+                        0,  
+                        2 * sizeof(float));
+        
+        ImPlot::PlotLine("Mouse Y", 
+                        &rdata2.Data[0].x, &rdata2.Data[0].y, 
+                        rdata2.Data.size(), 
+                        0,  
+                        0,  
+                        2 * sizeof(float));
+        
+        ImPlot::EndPlot();
+    }
+    ImGui::End();
+}
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
@@ -37,13 +119,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     if (!CreateDeviceD3D(hwnd)) { CleanupDeviceD3D(); ::UnregisterClass(wc.lpszClassName, hInstance); return 1; }
     ::ShowWindow(hwnd, nCmdShow); ::UpdateWindow(hwnd);
 
-    IMGUI_CHECKVERSION(); ImGui::CreateContext();
+    IMGUI_CHECKVERSION(); 
+    ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io; io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; ImGui::StyleColorsDark();
     ImGui_ImplWin32_Init(hwnd); ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
     
-    
-    auto* root = new FrameGUILayout::CustomLayoutNode(false, "RootRows");
+
+    auto* root = new FrameGUILayout::CustomLayoutNode(false, "Root");
 
 
     auto* row0 = new FrameGUILayout::CustomLayoutNode(true, "Geodetic");
@@ -62,9 +146,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     );
 
 
-    static void (*WinConsole)() = +[]() { ImGui::Begin("Console"); ImGui::TextColored(ImVec4(1, 1, 0, 1), "[INFO] Ready"); ImGui::End(); };
-    auto* row2 = new FrameGUILayout::CustomLayoutNode(true, "ConsoleRow");
-    row2->SetVerticalChildren(new FrameGUILayout::CustomLayoutNode(WinConsole, "Console"));
+    auto* row2 = new FrameGUILayout::CustomLayoutNode(true, "relplot");
+    row2->SetVerticalChildren(new FrameGUILayout::CustomLayoutNode(&RealtimePlots, "rel"));
 
     root->AddHorizontalChild(row0);
     root->AddHorizontalChild(row1);
@@ -87,8 +170,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         g_pSwapChain->Present(1, 0);
     }
-
-    ImGui_ImplDX11_Shutdown(); ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
+    ImPlot::DestroyContext();
+    ImGui_ImplDX11_Shutdown(); 
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
     CleanupDeviceD3D(); ::DestroyWindow(hwnd); ::UnregisterClass(wc.lpszClassName, hInstance); return 0;
 }
 
